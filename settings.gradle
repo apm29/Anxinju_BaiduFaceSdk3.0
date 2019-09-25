@@ -1,0 +1,2 @@
+include ':app' , ':facelibrary' ,':data', ':rs485reader',':serial',':tpsutils',':qrcode'
+rootProject.name='Anxinju_BaiduFaceSdk3.0'
