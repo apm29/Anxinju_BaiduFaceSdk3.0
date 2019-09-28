@@ -5,8 +5,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.apm.qrcode.QRScanView
-        android:id="@+id/layout_qrcode"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+<!--    <com.apm.qrcode.QRScanView-->
+<!--        android:id="@+id/layout_qrcode"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="match_parent" />-->
 </androidx.constraintlayout.widget.ConstraintLayout>

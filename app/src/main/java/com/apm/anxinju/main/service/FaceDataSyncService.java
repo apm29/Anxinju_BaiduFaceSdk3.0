@@ -206,6 +206,9 @@ public class FaceDataSyncService extends Service {
                         Log.e(TAG, "注册:" + model.toString());
                         Pair<Integer, Boolean> result
                                 = FaceRegisterUtils.getInstance().registerFaceSync(model);
+
+                        sendMessage(model,result.second);
+
                         if (!result.second) {
                             failedIds.add(result.first);
                         }
@@ -226,6 +229,17 @@ public class FaceDataSyncService extends Service {
                         Log.e(TAG, "同步数据完成");
                     }
                 });
+    }
+
+    public static String ACTION_NOTIFY_REGISTER = "ACTION_NOTIFY_REGISTER";
+    public static String KEY_NOTIFY_REGISTER_MODEL = "KEY_NOTIFY_REGISTER_MODEL";
+    public static String KEY_NOTIFY_REGISTER_SUCCESS = "KEY_NOTIFY_REGISTER_SUCCESS";
+
+    public void sendMessage(FaceModel faceModel,boolean success){
+        Intent intent = new Intent(ACTION_NOTIFY_REGISTER);
+        intent.putExtra(KEY_NOTIFY_REGISTER_MODEL,faceModel);
+        intent.putExtra(KEY_NOTIFY_REGISTER_SUCCESS,success);
+        sendBroadcast(intent);
     }
 
     private void reportFailedFace() {

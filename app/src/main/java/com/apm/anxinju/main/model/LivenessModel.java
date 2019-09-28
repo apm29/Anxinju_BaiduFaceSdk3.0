@@ -35,6 +35,16 @@ public class LivenessModel {
 
     private FaceInfo[] trackFaceInfo;
     private long allDetectDuration;
+    //已经在人脸库中搜索了一次
+    private boolean checked;
+
+    public boolean isChecked() {
+        return checked;
+    }
+
+    public void setChecked(boolean checked) {
+        this.checked = checked;
+    }
 
     public BDFaceImageInstance getBdFaceImageInstance() {
         return bdFaceImageInstance;

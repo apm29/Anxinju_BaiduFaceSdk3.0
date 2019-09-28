@@ -2,6 +2,7 @@ package com.apm.anxinju.main.manager;
 
 import android.content.Context;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.apm.anxinju.main.callback.FaceDetectCallBack;
 import com.apm.anxinju.main.api.FaceApi;
@@ -28,6 +29,7 @@ import com.baidu.idl.main.facesdk.model.Feature;
 import com.baidu.idl.main.facesdk.utils.PreferencesUtil;
 
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -594,6 +596,8 @@ public class FaceSDKManager {
         });
     }
 
+    private ConcurrentHashMap<Integer, User> trackMap = new ConcurrentHashMap<>();
+
     /**
      * 特征提取-人脸识别比对
      *
@@ -626,6 +630,16 @@ public class FaceSDKManager {
             return;
         }
 
+        //不提取已经搜索过的faceId
+        User trackedUser = trackMap.get(livenessModel.getFaceInfo().faceID);
+        if (trackedUser != null) {
+            livenessModel.setUser(trackedUser);
+            livenessModel.setFeatureScore(0.8F);
+            livenessModel.setCheckDuration(0);
+            livenessModel.setChecked(true);
+            return;
+        }
+
         // 如果提取特征+检索，调用search 方法
         if (featureSize == FEATURE_SIZE / 4) {
             // 特征提取成功
@@ -645,6 +659,7 @@ public class FaceSDKManager {
                     User user = FaceApi.getInstance().getUserListById(topFeature.getId());
                     if (user != null) {
                         livenessModel.setUser(user);
+                        trackMap.put(livenessModel.getFaceInfo().faceID, user);
                         livenessModel.setFeatureScore(topFeature.getScore());
                     }
                 }

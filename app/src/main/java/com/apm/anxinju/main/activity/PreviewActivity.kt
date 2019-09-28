@@ -1,22 +1,20 @@
 package com.apm.anxinju.main.activity
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.Service
-import android.content.ComponentName
-import android.content.Intent
-import android.content.ServiceConnection
+import android.content.*
 import android.graphics.*
 import android.os.*
 import android.renderscript.*
 import android.util.Log
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.TextureView
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import com.apm.anxinju.main.activity.QRCodeActivity.Companion.QR_TEXT
+import android.widget.*
+import androidx.core.app.ActivityCompat
+import com.apm.anxinju.main.RegisterReceiver
 import com.apm.anxinju.main.api.FaceApi
-import com.apm.anxinju_baidufacesdk30.R
 import com.apm.anxinju.main.callback.FaceDetectCallBack
 import com.apm.anxinju.main.camera.AutoTexturePreviewView
 import com.apm.anxinju.main.camera.CameraPreviewManager
@@ -24,10 +22,7 @@ import com.apm.anxinju.main.manager.FaceSDKManager
 import com.apm.anxinju.main.model.LivenessModel
 import com.apm.anxinju.main.model.SingleBaseConfig
 import com.apm.anxinju.main.service.FaceDataSyncService
-import com.apm.anxinju.main.utils.BitmapUtils
-import com.apm.anxinju.main.utils.FaceOnDrawTexturViewUtil
-import com.apm.anxinju.main.utils.FileUtils
-import com.apm.anxinju.main.utils.ToastUtils
+import com.apm.anxinju_baidufacesdk30.R
 import com.apm.data.api.Api
 import com.apm.data.model.BaseResponse
 import com.apm.data.model.RetrofitManager
@@ -36,22 +31,111 @@ import com.apm.rs485reader.service.DataSyncService
 import com.apm.rs485reader.service.IPictureCaptureInterface
 import com.baidu.idl.main.facesdk.FaceAuth
 import com.baidu.idl.main.facesdk.model.BDFaceSDKCommon
+import com.apm.anxinju.main.service.KeepAliveService
+import com.apm.anxinju.main.utils.*
+import com.apm.data.api.ApiKt
+import com.bumptech.glide.Glide
 import com.common.pos.api.util.PosUtil
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_preview.*
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class PreviewActivity : BaseActivity() {
 
+
+    companion object {
+        // 图片越大，性能消耗越大，也可以选择640*480， 1280*720
+        private const val PREFER_WIDTH = 640
+        private const val PREFER_HEIGHT = 480
+        private const val TAG = "PreviewActivity"
+    }
+
+    var `in`: Allocation? = null
+    var out: Allocation? = null
+    var yuvType: Type.Builder? = null
+    var rgbaType: Type.Builder? = null
+    private val rs: RenderScript by lazy {
+        RenderScript.create(this@PreviewActivity)
+    }
+    private val yuvToRgbIntrinsic: ScriptIntrinsicYuvToRGB by lazy {
+        ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs))
+    }
+    private var mBinder: IPictureCaptureInterface? = null
+    private val mFaceTextureView: TextureView by lazy {
+        findViewById<TextureView>(R.id.textureView)
+    }
+    private val mAutoTexturePreviewView: AutoTexturePreviewView by lazy {
+        findViewById<AutoTexturePreviewView>(R.id.autoTexturePreview)
+    }
+    private val mLiveType by lazy {
+        SingleBaseConfig.getBaseConfig().type
+    }
+    private val rectF = RectF()
+    private val paint = Paint().apply {
+        this.color = Color.GREEN
+        this.style = Paint.Style.STROKE
+    }
+    private val mHandler: Handler = Handler(Looper.getMainLooper())
+    private var detectQrCode = false
+    private val handler = Handler()
+    private val qrHandler = Handler()
+    private val faceAuth by lazy {
+        FaceAuth().apply {
+            setActiveLog(BDFaceSDKCommon.BDFaceLogInfo.BDFACE_LOG_ERROR_MESSAGE)
+        }
+    }
+    private val deviceId by lazy {
+        faceAuth.getDeviceId(this)
+        "19BC95DC053A2A4D130FC17C9B4E6EED43"
+    }
+    private var lastOpenTime = 0L
+    private var disposable: Disposable? = null
+    //上一个追踪到的faceId,来自LivenessModel
+    private var lastFaceId = -1
+    var lastToast: Toast? = null
+    //上次记录时间
+    private var lastRecordTimeMillis: Long = 0
+    private val mainContext: CoroutineContext =
+        Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+    private val keyboardHandler = Handler()
+
+    val width by lazy { this@PreviewActivity.resources.displayMetrics.widthPixels }
+    val height by lazy { this@PreviewActivity.resources.displayMetrics.heightPixels }
+    private val mFramingRect by lazy {
+        RectF().apply {
+
+            val widthFactor = 0.6f
+            val frameWidth = width * widthFactor
+            val horizontalOffset = width * (1 - widthFactor) / 2
+            val verticalOffset = (height - frameWidth) / 2
+            left = horizontalOffset
+            right = horizontalOffset + frameWidth
+            top = verticalOffset
+            bottom = verticalOffset + frameWidth
+        }
+    }
+    private val mPaintBorder by lazy {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.GREEN
+        }
+    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -63,6 +147,8 @@ class PreviewActivity : BaseActivity() {
         }
     }
 
+
+    @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_preview)
@@ -79,50 +165,38 @@ class PreviewActivity : BaseActivity() {
         //射频id同步
         val syncService = Intent(this, DataSyncService::class.java)
         syncService.putExtra(DataSyncService.DEVICE_ID, FaceAuth().getDeviceId(this))
+        startService(syncService)
+
         bindService(syncService, serviceConnection, Service.BIND_AUTO_CREATE)
 
+        val keepAliveService = Intent(this, KeepAliveService::class.java)
+        startService(keepAliveService)
+
+        //设置注册回调
+        RegisterReceiver.onReceiveRegister = { faceModel, success ->
+            try {
+                registerLL.visibility = View.VISIBLE
+                registerTv.text =
+                    "${if (success) "注册成功" else "注册失败"}: ${faceModel?.id}( ${if (faceModel?.delFlag == "1") "删除" else "注册"} ) "
+                Glide.with(this@PreviewActivity)
+                    .load(faceModel?.personPic ?: "")
+                    .into(registerIv)
+                handler.removeCallbacksAndMessages(null)
+                handler.postDelayed({
+                    registerLL.visibility = View.GONE
+                }, 5000)
+
+                // 数据变化，更新内存
+                FaceApi.getInstance().initDatabases(true)
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
 
     }
 
-    var `in`: Allocation? = null
-    var out: Allocation? = null
-    var yuvType: Type.Builder? = null
-    var rgbaType: Type.Builder? = null
-    private val rs: RenderScript by lazy {
-        RenderScript.create(this@PreviewActivity)
-    }
-    private val yuvToRgbIntrinsic: ScriptIntrinsicYuvToRGB by lazy {
-        ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs))
-    }
 
-    companion object {
-        // 图片越大，性能消耗越大，也可以选择640*480， 1280*720
-        private const val PREFER_WIDTH = 640
-        private const val PREFER_HEIGHT = 480
-        private const val TAG = "PreviewActivity"
-    }
-
-    private var mBinder: IPictureCaptureInterface? = null
-    private val mFaceTextureView: TextureView by lazy {
-        findViewById<TextureView>(R.id.textureView)
-    }
-
-    private val mAutoTexturePreviewView: AutoTexturePreviewView by lazy {
-        findViewById<AutoTexturePreviewView>(R.id.autoTexturePreview)
-    }
-
-    private val mLiveType by lazy {
-        SingleBaseConfig.getBaseConfig().type
-    }
-
-    private val rectF = RectF()
-    private val paint = Paint().apply {
-        this.color = Color.GREEN
-        this.style = Paint.Style.STROKE
-    }
-
-    private val mHandler: Handler = Handler(Looper.getMainLooper())
-    private var qrDialog: QrDialog? = null
     @SuppressLint("SetTextI18n")
     private fun initView() {
         mFaceTextureView.isOpaque = false
@@ -151,43 +225,25 @@ class PreviewActivity : BaseActivity() {
                     "检测方向：${SingleBaseConfig.getBaseConfig().detectDirection}\n"
 
         qrCode.setOnClickListener {
-            //            qrDialog = QrDialog(
-//                object : QrDialog.QRInteractions {
-//                    override fun onQrText(text: String, points: Array<PointF>) {
-//                        ToastUtils.toast(this@PreviewActivity, text)
-//                        qrDialog?.dismiss()
-//                        sendKeyPassInfo(text)
-//                    }
-//
-//                    override fun onQrDialogPause() {
-//                        println("--------------onQrDialogPause------------")
-//                        startPreview()
-//                    }
-//                }
-//            )
-//            CameraPreviewManager.getInstance().stopPreview()
-//            qrDialog?.show(supportFragmentManager, "qr_code")
-            CameraPreviewManager.getInstance().stopPreview()
-            startActivityForResult(
-                Intent(this, QRCodeActivity::class.java)
-                , 100
-            )
+            detectQrCode = true
+            displayTip("请将二维码对准扫描区域")
+            qrHandler.removeCallbacksAndMessages(null)
+            qrHandler.postDelayed({
+                detectQrCode = false
+            },30000)
         }
 
         configKeyBoard()
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if(requestCode == 100 && resultCode == Activity.RESULT_OK){
-            val text = data?.getStringExtra(QR_TEXT)?:""
-            sendKeyPassInfo(text)
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         startPreview()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unbindService(serviceConnection)
     }
 
     private fun startPreview() {
@@ -226,11 +282,19 @@ class PreviewActivity : BaseActivity() {
                 }
 
             }
+            if (detectQrCode) {
+                val qrcode = QRCodeUtils.decodeWithImage(data, width, height)
+                hideKeyboard(0)
+                if (qrcode != null) {
+                    sendKeyPassInfo(qrcode)
+                }
+            }
+
             // 摄像头预览数据进行人脸检测
             FaceSDKManager.getInstance().onDetectCheck(data, null, null,
                 height, width, mLiveType, object :
                     FaceDetectCallBack {
-                    override fun onFaceDetectCallback(livenessModel: LivenessModel) {
+                    override fun onFaceDetectCallback(livenessModel: LivenessModel?) {
                         // 输出结果
                         checkResult(livenessModel)
 
@@ -248,28 +312,112 @@ class PreviewActivity : BaseActivity() {
         }
     }
 
-    private val handler = Handler()
-    private val faceAuth by lazy {
-        FaceAuth().apply {
-            setActiveLog(BDFaceSDKCommon.BDFaceLogInfo.BDFACE_LOG_ERROR_MESSAGE)
+    private fun displayTip(tip: String) {
+        runOnUiThread {
+            mDetectText.text = tip
+            lastToast?.cancel()
+            val toast = Toast.makeText(this, tip, Toast.LENGTH_LONG)
+            val view = LayoutInflater.from(this).inflate(R.layout.layout_toast_message, null)
+            view.findViewById<TextView>(R.id.tv_message).text = tip
+            toast.view = view
+            toast.setGravity(Gravity.CENTER, 0, 0)
+            lastToast = toast
+            toast.show()
         }
     }
 
-    private val deviceId by lazy {
-        faceAuth.getDeviceId(this)
+    private fun showErrorTip(tip: String) {
+        runOnUiThread {
+            if (tip.isEmpty()) {
+                return@runOnUiThread
+            }
+            lastToast?.cancel()
+            val toast = Toast.makeText(this, tip, Toast.LENGTH_LONG)
+            val view = LayoutInflater.from(this).inflate(R.layout.layout_toast_message, null)
+            view.findViewById<TextView>(R.id.tv_message).text = tip
+            view.findViewById<LinearLayout>(R.id.layout_toast)
+                .setBackgroundColor(ActivityCompat.getColor(this, R.color.red))
+            toast.view = view
+            toast.setGravity(Gravity.TOP, 0, 0)
+            lastToast = toast
+            toast.show()
+        }
     }
 
-    private var lastImageFile: File? = null
-    private var lastOpenTime = 0L
-    private var disposable: Disposable? = null
+    private fun checkResult(livenessModel: LivenessModel?) {
+        // 当未检测到人脸UI显示
+        runOnUiThread(Runnable {
+            if (livenessModel == null) {
+                mDetectText.text = "未检测到人脸"
+                return@Runnable
+            }
+            if (mLiveType == 1) {
+                val user = livenessModel.user
+                if (user == null) {
+                    mDetectText.visibility = View.VISIBLE
+                    mDetectText.text = "搜索不到用户"
+
+                    val imageInstance = livenessModel.bdFaceImageInstance
+                    val bitmap = BitmapUtils.getInstaceBmp(imageInstance)
+                    FaceImageSynchronizeSavingUtils.saveNewImage(bitmap)
+
+                    val faceInfo = livenessModel.faceInfo
+                    if (faceInfo != null && faceInfo.faceID != lastFaceId && afterSeconds(1)) {
+                        if (!detectQrCode) {
+                            FaceImageSynchronizeSavingUtils.getImage {
+                                recordTempVisitorFace(it)
+                            }
+                        }
+                        lastFaceId = faceInfo.faceID
+                        runBlocking {
+                            val deferred = async(mainContext) {
+                                return@async isAllPass()
+                            }
+                            if (deferred.await()) {
+                                letGo()
+                            }
+                        }
+                        if (!detectQrCode) {
+                            showKeyCodeIME()
+                        }
+
+                    }
+
+                } else {
+                    val bdFaceImageInstance = livenessModel.bdFaceImageInstance
+                    if (bdFaceImageInstance != null) {
+                        mFaceDetectImageView.setImageBitmap(
+                            BitmapUtils.getInstaceBmp(
+                                bdFaceImageInstance
+                            )
+                        )
+                    }
+                    letGo()
+                    if (!livenessModel.isChecked) {
+                        displayTip("欢迎：${user.userName}")
+                        sendLogInfo(livenessModel)
+                    }
+                    hideKeyboard(0)
+                }
+            }
+        })
+    }
+
     @SuppressLint("CheckResult")
-    private fun letGo() {
-        val instance = PropertiesUtils.getInstance()
-        instance.init()
-        instance.open()
-        val relayCount = instance.readInt("relayCount", 2)
-        val relayDelay = instance.readInt("relayDelay", 2000)
+    private fun letGo() = runBlocking(mainContext) {
         val now = System.currentTimeMillis()
+        val deferred = async(mainContext) {
+            val instance = PropertiesUtils.getInstance()
+            instance.init()
+            instance.open()
+            val relayCount = instance.readInt("relayCount", 2)
+            val relayDelay = instance.readInt("relayDelay", 2000)
+            return@async relayCount to relayDelay
+        }
+
+        val relayCount = deferred.await().first
+        val relayDelay = deferred.await().second
+
         if ((now - lastOpenTime) > (relayCount * relayDelay + 1000L)) {
             if (disposable?.isDisposed == false) {
                 disposable?.dispose()
@@ -278,12 +426,15 @@ class PreviewActivity : BaseActivity() {
             disposable = Observable.interval(0, relayDelay.toLong(), TimeUnit.MILLISECONDS)
                 .take(relayCount.toLong())
                 .subscribeOn(Schedulers.io())
-                .subscribe {
+                .subscribe({
                     println("YJW:open gate")
                     val relayPowerSuccess = PosUtil.setRelayPower(1)
                     println("继电器:$relayPowerSuccess")
-                    handler.postDelayed({ PosUtil.setRelayPower(0) }, 500)
-                }
+                }, {
+                    it.printStackTrace()
+                }, {
+                    PosUtil.setRelayPower(0)
+                })
         }
 
     }
@@ -347,8 +498,6 @@ class PreviewActivity : BaseActivity() {
         return image
     }
 
-
-    private val keyboardHandler = Handler()
     private fun showKeyCodeIME() {
         val tvKeyCode: EditText = findViewById(R.id.tv_key_code)
         if (tvKeyCode.visibility == View.GONE) {
@@ -428,141 +577,87 @@ class PreviewActivity : BaseActivity() {
         }
     }
 
+
     //上传通行码通行的信息
     @SuppressLint("CheckResult")
     private fun sendKeyPassInfo(passCode: String) {
-        if (lastImageFile != null) {
-            val api = RetrofitManager.getInstance().retrofit.create(Api::class.java)
-            api.uploadImage(
+        FaceImageSynchronizeSavingUtils.getImage { copy ->
+            val api = RetrofitManager.getInstance().retrofit.create(ApiKt::class.java)
+
+            val uploadResponse = api.uploadImageSync(
                 MultipartBody.Builder()
                     .addFormDataPart(
                         "pic",
-                        lastImageFile?.name,
+                        copy.name,
                         RequestBody.create(
                             MediaType.parse("multipart/form-data"),
-                            lastImageFile!!
+                            copy
                         )
                     )
                     .build()
             )
-                .flatMap<BaseResponse<Any>> { imageDetailBaseResponse ->
-                    if (imageDetailBaseResponse.success()) {
-                        api.addKeyPassRecord(
-                            deviceId,
-                            passCode,
-                            imageDetailBaseResponse.data.orginPicPath
-                        )
+
+            try {
+                if (uploadResponse.success()) {
+                    val passResponse = api.addKeyPassRecord(
+                        deviceId,
+                        passCode,
+                        uploadResponse.data.orginPicPath
+                    )
+
+
+                    if (passResponse.success()) {
+                        displayTip(passResponse.text)
                     } else {
-                        throw RuntimeException(imageDetailBaseResponse.text + imageDetailBaseResponse.data)
+                        showErrorTip(passResponse.text)
                     }
-                }.subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    { baseResponse -> Log.d(TAG, "baseResp:" + baseResponse.text) },
-                    { throwable ->
-                        Log.d(TAG, "accept() called with: throwable = [$throwable]")
-                        throwable.printStackTrace()
-                    })
-        }
-    }
-
-
-    private fun displayTip(tip: String) {
-        runOnUiThread {
-            mDetectText.text = tip
-        }
-    }
-
-    //上一个追踪到的faceId,来自LivenessModel
-    private var lastFaceId = -1
-    //上次记录时间
-    private var lastRecordTimeMillis: Long = 0
-
-    private fun checkResult(livenessModel: LivenessModel?) {
-        // 当未检测到人脸UI显示
-        runOnUiThread(Runnable {
-            if (livenessModel == null) {
-                mDetectText.text = "未检测到人脸"
-                return@Runnable
-            }
-            val bdFaceImageInstance = livenessModel.bdFaceImageInstance
-            if (bdFaceImageInstance != null) {
-                mFaceDetectImageView.setImageBitmap(BitmapUtils.getInstaceBmp(bdFaceImageInstance))
-            }
-            if (mLiveType == 1) {
-                val user = livenessModel.user
-                if (user == null) {
-                    mDetectText.text = "搜索不到用户"
-                    mDetectText.visibility = View.VISIBLE
-                    val directory =
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                    val image = File(directory, "img_last_capture.jpg")
-                    lastImageFile = saveImageFile(image, livenessModel)
-                    val faceInfo = livenessModel.faceInfo
-                    if (faceInfo != null && faceInfo.faceID != lastFaceId && afterSeconds(1)) {
-                        recordTempVisitorFace(image)
-                        lastFaceId = faceInfo.faceID
-                        if (isAllPass()) {
-                            letGo()
-                        }
-                        showKeyCodeIME()
-                    }
-
                 } else {
-                    val absolutePath =
-                        (FileUtils.getBatchImportSuccessDirectory().absolutePath
-                                + "/" + user.imageName)
-                    val bitmap = BitmapFactory.decodeFile(absolutePath)
-                    mFaceDetectImageView.setImageBitmap(bitmap)
-                    mDetectText.text = "欢迎您， " + user.userName
-                    letGo()
-                    sendLogInfo(livenessModel)
-                    hideKeyboard(0)
+                    showErrorTip(uploadResponse.text)
                 }
+            } catch (e: Exception) {
+                showErrorTip(e.message ?: "通行码通行发生错误")
+            } finally {
+                detectQrCode = false
             }
-        })
+
+        }
+
     }
+
 
     @SuppressLint("CheckResult")
-    private fun recordTempVisitorFace(image: File) {
+    private suspend fun recordTempVisitorFace(image: File) {
         println("YJW:record face")
-        val api = RetrofitManager.getInstance().retrofit.create(Api::class.java)
-        api.addTempVisitorRecord(
-            MultipartBody.Builder()
-                .addFormDataPart(
-                    "pic",
-                    image.name,
-                    RequestBody.create(MediaType.parse("multipart/form-data"), image)
-                )
-                .addFormDataPart("gateId", deviceId)
-                .build()
-        )
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(
-                { baseResponse -> println(baseResponse.toString()) },
-                { throwable ->
-                    Log.d(TAG, "recordTempVisitorFace() called with: throwable = [$throwable]")
-                    throwable.printStackTrace()
-                })
+        val api = RetrofitManager.getInstance().retrofit.create(ApiKt::class.java)
+        try {
+            val response = api.addTempVisitorRecord(
+                MultipartBody.Builder()
+                    .addFormDataPart(
+                        "pic",
+                        image.name,
+                        RequestBody.create(MediaType.parse("multipart/form-data"), image)
+                    )
+                    .addFormDataPart("gateId", deviceId)
+                    .build()
+            )
+            println(response.toString())
+        } catch (e: Exception) {
+            showErrorTip(e.message ?: "")
+        } finally {
+
+        }
 
     }
 
-    private fun isAllPass(): Boolean {
+    private suspend fun isAllPass(): Boolean = suspendCoroutine {
         val instance = PropertiesUtils.getInstance()
         instance.init()
         instance.open()
-        return instance.readBoolean("allPass", false)
+        it.resume(instance.readBoolean("allPass", false))
     }
 
     private fun afterSeconds(second: Int): Boolean {
         return System.currentTimeMillis() - lastRecordTimeMillis > 1000 * second
-    }
-
-    private fun clearFaceDetectRect() {
-        val canvas = mFaceTextureView.lockCanvas()
-        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-        mFaceTextureView.unlockCanvasAndPost(canvas)
     }
 
 
@@ -601,21 +696,53 @@ class PreviewActivity : BaseActivity() {
                 rectF,
                 mAutoTexturePreviewView, model.bdFaceImageInstance
             )
-            // 绘制框
-            canvas.drawRect(rectF, paint)
-            mFaceTextureView.unlockCanvasAndPost(canvas)
+
 
             //1s后清除人脸框
             mHandler.postDelayed({
                 clearFaceDetectRect()
             }, 1000)
+
+
+            //绘制二维码框框
+            if (detectQrCode) {
+                mPaintBorder.style = Paint.Style.FILL
+                mPaintBorder.color = Color.argb(0x66,0x00,0x00,0x00)
+                canvas.drawRect(0f, 0f, width.toFloat(), mFramingRect.top, mPaintBorder)
+                canvas.drawRect(
+                    0f,
+                    mFramingRect.top,
+                    mFramingRect.left,
+                    mFramingRect.bottom + 1,
+                    mPaintBorder
+                )
+                canvas.drawRect(
+                    mFramingRect.right + 1,
+                    mFramingRect.top,
+                    width.toFloat(),
+                    mFramingRect.bottom + 1,
+                    mPaintBorder
+                )
+                canvas.drawRect(
+                    0f,
+                    mFramingRect.bottom + 1,
+                    width.toFloat(),
+                    height.toFloat(),
+                    mPaintBorder
+                )
+            }
+
+            // 绘制框
+            canvas.drawRect(rectF, paint)
+            mFaceTextureView.unlockCanvasAndPost(canvas)
         })
     }
 
-
-    override fun onDestroy() {
-        super.onDestroy()
-        unbindService(serviceConnection)
+    private fun clearFaceDetectRect() {
+        val canvas = mFaceTextureView.lockCanvas()
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+        mFaceTextureView.unlockCanvasAndPost(canvas)
     }
+
 
 }

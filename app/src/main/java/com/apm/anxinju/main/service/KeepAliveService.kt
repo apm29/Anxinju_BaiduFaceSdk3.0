@@ -1,4 +1,4 @@
-package com.baidu.idl.sample.service
+package com.apm.anxinju.main.service
 
 import android.app.Dialog
 import android.app.Notification
@@ -14,7 +14,6 @@ import android.widget.Button
 import android.widget.EditText
 import com.apm.anxinju_baidufacesdk30.R
 import com.apm.anxinju.main.activity.MainActivity
-import com.apm.anxinju.main.service.ForegroundUtils
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.IOException
@@ -170,11 +169,17 @@ class KeepAliveService : Service() {
                 while (line != null) {
                     Log.d(TAG, line)
                     line = bufferedReader.readLine()
-                    if (line?.contains("PassActivity") == true) {
-
-                    } else {
-                        Log.e(TAG, line)
-                        bringUpMainActivity()
+                    when {
+                        line?.contains("PreviewActivity")  == true -> {
+                            Log.d(TAG,"Preview Running")
+                        }
+                        line?.contains("QRCodeActivity")  == true -> {
+                            Log.d(TAG,"QRCode Running")
+                        }
+                        else -> {
+                            Log.e(TAG, line)
+                            bringUpMainActivity()
+                        }
                     }
                 }
             } catch (e: IOException) {

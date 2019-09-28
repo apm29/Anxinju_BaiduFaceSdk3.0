@@ -36,24 +36,50 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@+id/textureView" />
+    <LinearLayout
+        android:id="@+id/registerLL"
+        android:visibility="gone"
+        android:orientation="vertical"
+        app:layout_constraintTop_toBottomOf="@id/mFaceDetectImageView"
+        app:layout_constraintStart_toStartOf="@id/mFaceDetectImageView"
+        app:layout_constraintEnd_toEndOf="@id/mFaceDetectImageView"
+        android:layout_width="wrap_content"
+        android:background="@color/white"
+        android:padding="3dp"
+        android:gravity="center"
+        android:layout_height="wrap_content">
+        <ImageView
+            android:id="@+id/registerIv"
+            android:scaleType="centerCrop"
+            android:layout_width="100dp"
+            android:layout_height="100dp"/>
+        <TextView
+            android:textColor="@color/black"
+            android:id="@+id/registerTv"
+            android:textSize="40sp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
     <Button
         android:text="扫描二维码"
         android:id="@+id/qrCode"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_margin="60dp"
+        android:layout_margin="10dp"
         android:padding="30dp"
-        android:layout_width="wrap_content"
+        android:background="@drawable/bt_set_round"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"/>
 
     <include
         android:id="@+id/layout_keyboard"
         layout="@layout/layout_keyboard"
-        android:layout_margin="30dp"
-        android:layout_width="wrap_content"
+        android:layout_margin="25dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:visibility="gone"
+        tools:visibility="visible"
         app:layout_constraintBottom_toBottomOf="@+id/textureView"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"

@@ -59,7 +59,7 @@ public class QRScanView extends FrameLayout implements QRCodeReaderView.OnQRCode
         mQrCodeView.setTorchEnabled(true);
 
         // Use this function to set back camera preview
-        mQrCodeView.setBackCamera();
+        mQrCodeView.setFrontCamera();
     }
 
 

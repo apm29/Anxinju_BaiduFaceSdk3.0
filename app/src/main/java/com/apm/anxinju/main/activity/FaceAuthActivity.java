@@ -3,6 +3,7 @@ package com.apm.anxinju.main.activity;
 
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -136,7 +137,7 @@ public class FaceAuthActivity extends BaseActivity implements View.OnClickListen
 
                             @Override
                             public void initLicenseSuccess() {
-
+                                startActivity(new Intent(FaceAuthActivity.this, PreviewActivity.class));
                             }
 
                             @Override
@@ -172,7 +173,7 @@ public class FaceAuthActivity extends BaseActivity implements View.OnClickListen
 
                             @Override
                             public void initLicenseSuccess() {
-
+                                startActivity(new Intent(FaceAuthActivity.this, PreviewActivity.class));
                             }
 
                             @Override
@@ -198,6 +199,7 @@ public class FaceAuthActivity extends BaseActivity implements View.OnClickListen
             });
         }
     }
+
 
     private void addLisenter() {
         etKey.addTextChangedListener(new TextWatcher() {

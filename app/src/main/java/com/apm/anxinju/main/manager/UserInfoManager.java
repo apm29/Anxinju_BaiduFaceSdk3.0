@@ -2,6 +2,7 @@ package com.apm.anxinju.main.manager;
 
 import android.graphics.Bitmap;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.apm.anxinju.main.api.FaceApi;
 import com.apm.anxinju.main.model.Group;
@@ -30,6 +31,8 @@ public class UserInfoManager {
             mExecutorService = Executors.newSingleThreadExecutor();
         }
     }
+
+
 
     private static class HolderClass {
         private static final UserInfoManager instance = new UserInfoManager();
