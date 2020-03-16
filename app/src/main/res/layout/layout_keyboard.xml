@@ -10,6 +10,7 @@
         android:minHeight="60dp"
         android:gravity="center"
         android:enabled="false"
+        android:focusable="false"
         android:background="@color/white"
         android:textColor="@color/black"
         tools:text="123"

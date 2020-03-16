@@ -1,14 +1,13 @@
 package com.apm.rs485reader.service
 
 import android.annotation.SuppressLint
-import android.app.Notification
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
 import android.content.*
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
 import android.hardware.Camera
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
@@ -19,14 +18,15 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import androidx.core.app.NotificationCompat
 import com.apm.data.api.Api
 import com.apm.data.api.ApiKt
 import com.apm.data.model.BaseResponse
 import com.apm.data.model.ImageDetail
 import com.apm.data.model.RetrofitManager
 import com.apm.rs485reader.R
-import com.apm.rs485reader.db.GateDataBase
-import com.apm.rs485reader.db.entity.User
+import com.apm.data.db.GateDataBase
+import com.apm.data.db.entity.User
 import com.common.pos.api.util.PosUtil
 import com.spark.zj.comcom.serial.*
 import io.reactivex.Observable
@@ -55,6 +55,7 @@ class DataSyncService : Service() {
         const val DEVICE_ID = "deviceId"
         const val TTY_NAME = "ttyName"
         const val LAST_SYNC_TIME = "lastSyncTime"
+        private val CHANNEL_ID = "RFID_DATA_SYNC-1"
     }
 
 
@@ -210,8 +211,10 @@ class DataSyncService : Service() {
                                         Log.d(TAG, "user 已存在 remoteId ${model.id}")
                                     }
                                     val id = dataBase.getGateDao().addUser(
-                                            User(remote_id = model.id
-                                                    ?: 0, hex = model.hexString)
+                                        User(
+                                            remote_id = model.id
+                                                ?: 0, hex = model.hexString
+                                        )
                                     )
                                     Log.d(TAG, "插入成功 remoteId ${model.id} - 数据库ROW ID $id")
                                 } else {
@@ -495,17 +498,42 @@ class DataSyncService : Service() {
         firstOpenSignal = true
     }
 
+
+
     private fun startSelfWithNotification() {
         val intent = Intent(this, DataSyncService::class.java)
         intent.putExtra("show", 2)
-        val notification = Notification.Builder(this)
+        val builder = Notification.Builder(this)
                 .setContentIntent(PendingIntent.getService(this, REQUEST_CODE, intent, 0))
                 .setLargeIcon(BitmapFactory.decodeResource(this.resources, R.drawable.track_image_angle)) // 设置下拉列表中的图标(大图标)
                 .setContentTitle("RFID数据同步服务") // 设置下拉列表里的标题
                 .setSmallIcon(R.drawable.track_image_angle) // 设置状态栏内的小图标
                 .setContentText("数据同步中") // 设置上下文内容
                 .setWhen(System.currentTimeMillis()) // 设置该通知发生的时间
-                .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationChannel = NotificationChannel(
+                CHANNEL_ID,
+                "RFID数据同步服务",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            val notificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(notificationChannel)
+            val builderCompat = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("RFID数据同步服务") // 设置下拉列表里的标题
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setSmallIcon(R.drawable.track_image_angle) // 设置状态栏内的小图标
+                .setContentText("数据同步中") // 设置上下文内容
+                .setWhen(System.currentTimeMillis()) // 设置该通知发生的时间
+            val notification = builderCompat.build() // 获取构建好的Notification
+            notification.defaults = Notification.DEFAULT_SOUND //设置为默认的声音
+            startForeground(110, notification)
+            return
+        }
+
+        val notification = builder.build()
+
         notification.defaults = Notification.DEFAULT_SOUND
 
         startForeground(NOTIFICATION_ID, notification)

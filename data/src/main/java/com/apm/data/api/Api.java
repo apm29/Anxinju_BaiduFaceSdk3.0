@@ -2,6 +2,7 @@ package com.apm.data.api;
 
 import com.apm.data.model.BaseResponse;
 import com.apm.data.model.FaceModel;
+import com.apm.data.model.FileDetail;
 import com.apm.data.model.ImageDetail;
 import com.apm.data.model.RFIDModel;
 
@@ -67,6 +68,14 @@ public interface Api {
      */
     @POST("/business/upload/uploadPic")
     Observable<BaseResponse<ImageDetail>> uploadImage(
+            @Body MultipartBody image
+    );
+
+    /**
+     * pic - image
+     */
+    @POST("/business/upload/uploadFile")
+    Observable<BaseResponse<FileDetail>> uploadFile(
             @Body MultipartBody image
     );
 

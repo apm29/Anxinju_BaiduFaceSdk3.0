@@ -1,24 +1,29 @@
 package com.apm.anxinju.main.service
 
-import android.app.Dialog
-import android.app.Notification
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
+import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import androidx.core.app.NotificationCompat
 import com.apm.anxinju_baidufacesdk30.R
 import com.apm.anxinju.main.activity.MainActivity
+import com.apm.rs485reader.service.DataSyncService
+import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
+import java.lang.Runnable
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
+import kotlin.coroutines.CoroutineContext
 
 
 /**
@@ -26,7 +31,12 @@ import kotlin.concurrent.thread
  *  date : 2019-08-14 15:27
  *  description :
  */
-class KeepAliveService : Service() {
+class KeepAliveService : Service(),CoroutineScope {
+    override val coroutineContext: CoroutineContext
+        get() = Dispatchers.Main
+
+    private val singleThreadDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+
     override fun onBind(intent: Intent?): IBinder? {
         throw UnsupportedOperationException()
     }
@@ -67,20 +77,53 @@ class KeepAliveService : Service() {
     companion object {
         const val KEY_SHOW_OVERLAY = "SHOW_NOTIFICATION_DIALOG"
         const val TAG = "KeepAliveService"
+        const val CHANNEL_ID = "KEEPALIVE-1"
     }
+
+
+
+
 
     private fun startSelfWithNotification() {
         println("KeepAliveService.startSelfWithNotification")
         val intent = Intent(this, KeepAliveService::class.java)
         intent.putExtra(KEY_SHOW_OVERLAY, true)
-        val notification = Notification.Builder(this)
+        val builder = Notification.Builder(this)
                 .setContentIntent(PendingIntent.getService(this, 1231, intent, PendingIntent.FLAG_UPDATE_CURRENT))
                 .setContentTitle("通行保活服务") // 设置下拉列表里的标题
                 .setContentText("通行保活服务") // 设置上
                 .setLargeIcon(BitmapFactory.decodeResource(this.resources, R.mipmap.ic_tracking_img)) // 设置下拉列表中的图标(大图标)
                 .setSmallIcon(R.mipmap.ic_tracking_img) // 设// 下文内容
                 .setWhen(System.currentTimeMillis()) // 设置该通知发生的时间
-                .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationChannel = NotificationChannel(
+                CHANNEL_ID,
+                "通行保活服务",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            val notificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(notificationChannel)
+            val builderCompat = NotificationCompat.Builder(this, "KEEPALIVE-1")
+                .setLargeIcon(
+                    BitmapFactory.decodeResource(
+                        this.resources,
+                        R.mipmap.ic_image_attrs
+                    )
+                ) // 设置下拉列表中的图标(大图标)
+                .setContentTitle("通行保活服务") // 设置下拉列表里的标题
+                .setSmallIcon(R.mipmap.ic_check) // 设置状态栏内的小图标
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentText("通行保活服务") // 设置上下文内容
+                .setWhen(System.currentTimeMillis()) // 设置该通知发生的时间
+            val notification = builderCompat.build() // 获取构建好的Notification
+            notification.defaults = Notification.DEFAULT_SOUND //设置为默认的声音
+            startForeground(110, notification)
+            return
+        }
+
+        val notification = builder.build()
         notification.defaults = Notification.DEFAULT_SOUND
 
         startForeground(1233, notification)
@@ -124,10 +167,12 @@ class KeepAliveService : Service() {
     }
 
     private fun bringUpMainActivity() {
-        startActivity(Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT)
-        })
+        handler.post {
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT)
+            })
+        }
     }
 
     private val process by lazy {
@@ -167,7 +212,7 @@ class KeepAliveService : Service() {
             try {
                 var line: String? = bufferedReader.readLine()
                 while (line != null) {
-                    Log.d(TAG, line)
+                    Log.d(TAG, line?:"")
                     line = bufferedReader.readLine()
                     when {
                         line?.contains("PreviewActivity")  == true -> {
@@ -177,8 +222,10 @@ class KeepAliveService : Service() {
                             Log.d(TAG,"QRCode Running")
                         }
                         else -> {
-                            Log.e(TAG, line)
-                            bringUpMainActivity()
+                            Log.e(TAG, line?:"")
+                            //withContext(Dispatchers.Main){
+                                bringUpMainActivity()
+                            //}
                         }
                     }
                 }

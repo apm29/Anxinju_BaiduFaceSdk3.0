@@ -133,8 +133,9 @@ public class CameraPreviewManager implements TextureView.SurfaceTextureListener 
     }
 
     @Override
-    public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int i, int i1) {
+    public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {
         Log.e(TAG, "--surfaceTexture--TextureSizeChanged");
+        System.out.println("width = [" + width + "], height = [" + height + "]");
     }
 
     @Override

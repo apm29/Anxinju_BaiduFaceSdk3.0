@@ -128,7 +128,10 @@ public class FaceSDKManager {
                             listener.initLicenseSuccess();
                         }
                         initModel(context, listener);
-                        return;
+                    }else {
+                        if(listener!=null) {
+                            listener.initLicenseFail(code, response);
+                        }
                     }
                 }
             });
@@ -144,7 +147,10 @@ public class FaceSDKManager {
                             listener.initLicenseSuccess();
                         }
                         initModel(context, listener);
-                        return;
+                    }else {
+                        if(listener!=null) {
+                            listener.initLicenseFail(code, response);
+                        }
                     }
                 }
             });
@@ -225,7 +231,7 @@ public class FaceSDKManager {
                     @Override
                     public void onResponse(int code, String response) {
                         long endInitModelTime = System.currentTimeMillis();
-                        LogUtils.e(TIME_TAG, "init model time = " + (endInitModelTime - startInitModelTime));
+                        LogUtils.e(TIME_TAG, "initSDK model time = " + (endInitModelTime - startInitModelTime));
                         if (code != 0) {
                             ToastUtils.toast(context, "模型加载失败");
                             if (listener != null) {

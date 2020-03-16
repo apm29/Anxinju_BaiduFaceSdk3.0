@@ -1,13 +1,15 @@
 package com.apm.data.api
 
 import com.apm.data.model.BaseResponse
+import com.apm.data.model.FaceModel
+import com.apm.data.model.FileDetail
 import com.apm.data.model.ImageDetail
+import io.reactivex.Maybe
 import io.reactivex.Observable
+import io.reactivex.Single
 import okhttp3.MultipartBody
-import retrofit2.http.Body
-import retrofit2.http.Field
-import retrofit2.http.FormUrlEncoded
-import retrofit2.http.POST
+import okhttp3.ResponseBody
+import retrofit2.http.*
 
 interface ApiKt {
 
@@ -19,6 +21,14 @@ interface ApiKt {
             @Body image: MultipartBody
     ): BaseResponse<ImageDetail>
 
+
+    /**
+     * pic - image
+     */
+    @POST("/business/upload/uploadFile")
+    suspend fun uploadFile(
+        @Body image: MultipartBody
+    ): BaseResponse<FileDetail>
 
     @FormUrlEncoded
     @POST("/business/visitor/addVisitorGate")
@@ -44,5 +54,38 @@ interface ApiKt {
     suspend fun addTempVisitorRecord(
         @Body data: MultipartBody
     ): BaseResponse<*>
+
+
+    //获取未同步face数据
+    @FormUrlEncoded
+    @POST("/business/recognition/getNotSync")
+    suspend fun getNotSync(
+        @Field("lastSyncTime") lastSyncTime: String,
+        @Field("doorCurrentTime") doorCurrentTime: String,
+        @Field("doorNo") deviceId: String
+    ): BaseResponse<List<FaceModel>>
+
+    //上传未注册成功的id,逗号分隔
+    @FormUrlEncoded
+    @POST("/business/recognition/feedbackNoSyncData")
+    suspend fun addUnRegisterIds(
+        @Field("ids") unregisterIds: String,
+        @Field("doorNo") deviceId: String
+    ): BaseResponse<*>
+
+    //文件下载
+    @GET
+    suspend fun downloadFile(
+        @Url fileUrl: String
+    ): ResponseBody
+
+
+    //人脸通行
+    @FormUrlEncoded
+    @POST("/business/inOutLog/addLog")
+    suspend fun passByFaceId(
+        @Field("recogId") userId: String, @Field("doorNo") gateId: String, @Field("imageUrl") imageUrl: String
+    ): BaseResponse<*>
+
 
 }

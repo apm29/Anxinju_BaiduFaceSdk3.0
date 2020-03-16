@@ -190,12 +190,12 @@ public class FaceApi {
     /**
      * 更新用户
      */
-    public boolean userUpdateWithUserId(String groupId, String userId, String imageName, byte[] feature) {
-        if (groupId == null || userId == null || imageName == null || feature == null) {
+    public boolean userUpdateWithUserId(String groupId, String userId, String imageName,String userName, byte[] feature) {
+        if (groupId == null || userId == null || imageName == null  || userName == null|| feature == null) {
             return false;
         }
 
-        boolean ret = DBManager.getInstance().updateUserWithUserId(groupId, userId, imageName, feature);
+        boolean ret = DBManager.getInstance().updateUserWithUserId(groupId, userId, imageName,userName, feature);
         return ret;
     }
 
@@ -264,7 +264,7 @@ public class FaceApi {
 
 
     public boolean registerUserIntoDBmanager(String groupName, String userId, String picName,
-                                             String userInfo, byte[] faceFeature) {
+                                             String userInfo,String userName, byte[] faceFeature) {
         boolean isSuccess = false;
 
         Group group = new Group();
@@ -277,7 +277,7 @@ public class FaceApi {
          * uid为用户的id,百度对uid不做限制和处理，应该与您的帐号系统中的用户id对应。
          */
         user.setUserId(userId);
-        user.setUserName(userId);
+        user.setUserName(userName);
         user.setFeature(faceFeature);
         user.setImageName(picName);
         if (userInfo != null) {

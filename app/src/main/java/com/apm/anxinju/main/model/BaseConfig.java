@@ -57,7 +57,7 @@ public class BaseConfig {
     // 下巴被遮挡阈值，默认为0.6
     private float chinContour = 0.6f;
     // 人脸完整度，默认为1。0为人脸溢出图像边界，1为人脸都在图像边界内
-    private float completeness = 1f;
+    private float completeness = 0.8f;
     // 识别阈值，0-100，默认为80分,需要选择具体模型的阈值。live：80、idcard：80
     private int threshold = 80;
     // 使用的特征抽取模型默认为生活照：1；证件照：2
@@ -73,7 +73,7 @@ public class BaseConfig {
     // 是否开启质量检测开关
     private boolean qualityControl = false;
     // RGB活体阀值
-    private float rgbLiveScore = 0.90f;
+    private float rgbLiveScore = 0.80f;
     // NIR活体阀值
     private float nirLiveScore = 0.90f;
 

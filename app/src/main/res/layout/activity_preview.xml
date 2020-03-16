@@ -9,14 +9,22 @@
 
     <com.apm.anxinju.main.camera.AutoTexturePreviewView
         android:id="@+id/autoTexturePreview"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        android:layout_height="0dp"
         />
 
     <TextureView
         android:id="@+id/textureView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintStart_toStartOf="@id/autoTexturePreview"
+        app:layout_constraintEnd_toEndOf="@id/autoTexturePreview"
+        app:layout_constraintTop_toTopOf="@id/autoTexturePreview"
+        app:layout_constraintBottom_toBottomOf="@id/autoTexturePreview"
         />
 
     <TextView
@@ -35,6 +43,15 @@
         android:layout_marginTop="35dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/textureView" />
+
+    <ImageView
+        android:id="@+id/mFaceTempImageView"
+        android:layout_width="120dp"
+        android:layout_height="100dp"
+        android:layout_marginTop="35dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/mFaceDetectImageView"
         app:layout_constraintTop_toTopOf="@+id/textureView" />
     <LinearLayout
         android:id="@+id/registerLL"

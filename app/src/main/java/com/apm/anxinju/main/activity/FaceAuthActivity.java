@@ -24,6 +24,8 @@ import com.baidu.idl.main.facesdk.callback.Callback;
 import com.baidu.idl.main.facesdk.utils.FileUitls;
 import com.baidu.idl.main.facesdk.utils.PreferencesUtil;
 
+import me.drakeet.support.toast.ToastCompat;
+
 /**
  * 设备激活 （在线激活、离线激活）
  *
@@ -121,7 +123,7 @@ public class FaceAuthActivity extends BaseActivity implements View.OnClickListen
         if (num == 1) {
             String key = etKey.getText().toString().trim().toUpperCase();
             if (TextUtils.isEmpty(key)) {
-                Toast.makeText(this, "请输入激活序列号!", Toast.LENGTH_SHORT).show();
+                ToastCompat.makeText(this, "请输入激活序列号!", Toast.LENGTH_SHORT).show();
                 return;
             }
             faceAuth.initLicenseOnLine(this, key, new Callback() {
@@ -272,7 +274,7 @@ public class FaceAuthActivity extends BaseActivity implements View.OnClickListen
 
     private void toast(final String text, final Context context) {
 
-        Toast.makeText(context, text, Toast.LENGTH_LONG).show();
+        ToastCompat.makeText(context, text, Toast.LENGTH_LONG).show();
 
 
     }

@@ -2,7 +2,9 @@ package com.apm.anxinju.main.activity
 
 import android.annotation.SuppressLint
 import android.app.Service
-import android.content.*
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
 import android.graphics.*
 import android.os.*
 import android.renderscript.*
@@ -22,18 +24,22 @@ import com.apm.anxinju.main.manager.FaceSDKManager
 import com.apm.anxinju.main.model.LivenessModel
 import com.apm.anxinju.main.model.SingleBaseConfig
 import com.apm.anxinju.main.service.FaceDataSyncService
+import com.apm.anxinju.main.service.KeepAliveService
+import com.apm.anxinju.main.utils.*
 import com.apm.anxinju_baidufacesdk30.R
+import com.apm.dahuaipc.INetSDKHelper
 import com.apm.data.api.Api
+import com.apm.data.api.ApiKt
+import com.apm.data.db.FaceDBManager
+import com.apm.data.db.entity.PassageLog
 import com.apm.data.model.BaseResponse
 import com.apm.data.model.RetrofitManager
 import com.apm.data.persistence.PropertiesUtils
+import com.apm.nfc.NFCDetectorManager
 import com.apm.rs485reader.service.DataSyncService
 import com.apm.rs485reader.service.IPictureCaptureInterface
 import com.baidu.idl.main.facesdk.FaceAuth
 import com.baidu.idl.main.facesdk.model.BDFaceSDKCommon
-import com.apm.anxinju.main.service.KeepAliveService
-import com.apm.anxinju.main.utils.*
-import com.apm.data.api.ApiKt
 import com.bumptech.glide.Glide
 import com.common.pos.api.util.PosUtil
 import io.reactivex.Observable
@@ -41,23 +47,27 @@ import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_preview.*
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import me.drakeet.support.toast.ToastCompat
 import okhttp3.MediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.lang.Runnable
+import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlin.system.measureTimeMillis
 
-class PreviewActivity : BaseActivity() {
+class PreviewActivity : BaseActivity(), CoroutineScope {
+
+    override val coroutineContext: CoroutineContext
+        get() = Dispatchers.Main
 
 
     companion object {
@@ -95,6 +105,7 @@ class PreviewActivity : BaseActivity() {
     private val mHandler: Handler = Handler(Looper.getMainLooper())
     private var detectQrCode = false
     private val handler = Handler()
+    private val imageHandler = Handler()
     private val qrHandler = Handler()
     private val faceAuth by lazy {
         FaceAuth().apply {
@@ -103,7 +114,7 @@ class PreviewActivity : BaseActivity() {
     }
     private val deviceId by lazy {
         faceAuth.getDeviceId(this)
-        "19BC95DC053A2A4D130FC17C9B4E6EED43"
+        //"19BC95DC053A2A4D130FC17C9B4E6EED43"
     }
     private var lastOpenTime = 0L
     private var disposable: Disposable? = null
@@ -112,10 +123,9 @@ class PreviewActivity : BaseActivity() {
     var lastToast: Toast? = null
     //上次记录时间
     private var lastRecordTimeMillis: Long = 0
-    private val mainContext: CoroutineContext =
+    private val threadContext: CoroutineContext =
         Executors.newSingleThreadExecutor().asCoroutineDispatcher()
     private val keyboardHandler = Handler()
-
     val width by lazy { this@PreviewActivity.resources.displayMetrics.widthPixels }
     val height by lazy { this@PreviewActivity.resources.displayMetrics.heightPixels }
     private val mFramingRect by lazy {
@@ -135,6 +145,12 @@ class PreviewActivity : BaseActivity() {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.GREEN
         }
+    }
+
+    private val mNFCDetectorManager by lazy{
+        NFCDetectorManager(
+            this,this,this::class.java
+        )
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -158,8 +174,6 @@ class PreviewActivity : BaseActivity() {
 
         //人脸同步
         val service = Intent(this, FaceDataSyncService::class.java)
-        FaceDataSyncService.GlobalVars.keepInApp = service
-        FaceDataSyncService.GlobalVars.taskID = taskId
         startService(service)
 
         //射频id同步
@@ -167,7 +181,6 @@ class PreviewActivity : BaseActivity() {
         syncService.putExtra(DataSyncService.DEVICE_ID, FaceAuth().getDeviceId(this))
         startService(syncService)
 
-        bindService(syncService, serviceConnection, Service.BIND_AUTO_CREATE)
 
         val keepAliveService = Intent(this, KeepAliveService::class.java)
         startService(keepAliveService)
@@ -178,8 +191,16 @@ class PreviewActivity : BaseActivity() {
                 registerLL.visibility = View.VISIBLE
                 registerTv.text =
                     "${if (success) "注册成功" else "注册失败"}: ${faceModel?.id}( ${if (faceModel?.delFlag == "1") "删除" else "注册"} ) "
+                val prop = PropertiesUtils.getInstance()
+                prop.open()
+                val picUrl = faceModel?.absolutePicUrl(
+                    prop.readString(
+                        "fileBaseUrl",
+                        "http://axj.ciih.net/"
+                    )
+                )
                 Glide.with(this@PreviewActivity)
-                    .load(faceModel?.personPic ?: "")
+                    .load(picUrl ?: "")
                     .into(registerIv)
                 handler.removeCallbacksAndMessages(null)
                 handler.postDelayed({
@@ -194,7 +215,20 @@ class PreviewActivity : BaseActivity() {
             }
         }
 
+        //nfc
+        mNFCDetectorManager.startNFCDetect()
+
     }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        hideUi()
+        intent?.apply {
+            mNFCDetectorManager.processIntent(this)
+        }
+    }
+
+
 
 
     @SuppressLint("SetTextI18n")
@@ -205,6 +239,24 @@ class PreviewActivity : BaseActivity() {
             PREFER_WIDTH,
             PREFER_HEIGHT
         )
+        hideUi()
+        mDetectText.text =
+            "视频方向：${SingleBaseConfig.getBaseConfig().videoDirection}\n" +
+                    "检测方向：${SingleBaseConfig.getBaseConfig().detectDirection}\n"
+
+        qrCode.setOnClickListener {
+            detectQrCode = true
+            displayTip("请将二维码对准扫描区域")
+            qrHandler.removeCallbacksAndMessages(null)
+            qrHandler.postDelayed({
+                detectQrCode = false
+            }, 30000)
+        }
+
+        configKeyBoard()
+    }
+
+    private fun hideUi() {
         val decorView = window.decorView
 
         val flags = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -220,20 +272,6 @@ class PreviewActivity : BaseActivity() {
                     decorView.systemUiVisibility = flags
                 }
             }
-        mDetectText.text =
-            "视频方向：${SingleBaseConfig.getBaseConfig().videoDirection}\n" +
-                    "检测方向：${SingleBaseConfig.getBaseConfig().detectDirection}\n"
-
-        qrCode.setOnClickListener {
-            detectQrCode = true
-            displayTip("请将二维码对准扫描区域")
-            qrHandler.removeCallbacksAndMessages(null)
-            qrHandler.postDelayed({
-                detectQrCode = false
-            },30000)
-        }
-
-        configKeyBoard()
     }
 
     override fun onResume() {
@@ -241,10 +279,18 @@ class PreviewActivity : BaseActivity() {
         startPreview()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    override fun onStart() {
+        super.onStart()
+        val syncService = Intent(this, DataSyncService::class.java)
+        syncService.putExtra(DataSyncService.DEVICE_ID, deviceId)
+        bindService(syncService, serviceConnection, Service.BIND_AUTO_CREATE)
+    }
+
+    override fun onStop() {
+        super.onStop()
         unbindService(serviceConnection)
     }
+
 
     private fun startPreview() {
         CameraPreviewManager.getInstance().cameraFacing = CameraPreviewManager.CAMERA_FACING_FRONT
@@ -253,35 +299,8 @@ class PreviewActivity : BaseActivity() {
             PREFER_WIDTH,
             PREFER_HEIGHT
         ) { data, _, width, height ->
-
             //将图像数据放入binder
-            if (yuvType == null) {
-                yuvType = Type.Builder(rs, Element.U8(rs)).setX(data.size)
-                `in` = Allocation.createTyped(rs, yuvType!!.create(), Allocation.USAGE_SCRIPT)
-
-                rgbaType = Type.Builder(rs, Element.RGBA_8888(rs)).setX(PREFER_HEIGHT)
-                    .setY(PREFER_WIDTH)
-                out = Allocation.createTyped(rs, rgbaType!!.create(), Allocation.USAGE_SCRIPT)
-            }
-            `in`!!.copyFrom(data)
-
-            yuvToRgbIntrinsic.setInput(`in`)
-            yuvToRgbIntrinsic.forEach(out)
-
-            val bmpout =
-                Bitmap.createBitmap(
-                    PREFER_HEIGHT,
-                    PREFER_WIDTH, Bitmap.Config.ARGB_8888
-                )
-            out!!.copyTo(bmpout)
-            if (mBinder != null) {
-                try {
-                    mBinder?.setPicture(bmpout)
-                } catch (e: Throwable) {
-                    e.printStackTrace()
-                }
-
-            }
+            saveBitmapForRFID(data)
             if (detectQrCode) {
                 val qrcode = QRCodeUtils.decodeWithImage(data, width, height)
                 hideKeyboard(0)
@@ -312,11 +331,44 @@ class PreviewActivity : BaseActivity() {
         }
     }
 
+    private fun saveBitmapForRFID(data: ByteArray) {
+        if (yuvType == null) {
+            yuvType = Type.Builder(rs, Element.U8(rs)).setX(data.size)
+            `in` = Allocation.createTyped(rs, yuvType!!.create(), Allocation.USAGE_SCRIPT)
+
+            rgbaType = Type.Builder(rs, Element.RGBA_8888(rs)).setX(PREFER_HEIGHT)
+                .setY(PREFER_WIDTH)
+            out = Allocation.createTyped(rs, rgbaType!!.create(), Allocation.USAGE_SCRIPT)
+        }
+        `in`!!.copyFrom(data)
+
+        yuvToRgbIntrinsic.setInput(`in`)
+        yuvToRgbIntrinsic.forEach(out)
+
+        val bmpout =
+            Bitmap.createBitmap(
+                PREFER_HEIGHT,
+                PREFER_WIDTH, Bitmap.Config.ARGB_8888
+            )
+        out!!.copyTo(bmpout)
+        if (mBinder != null) {
+            try {
+                mBinder?.setPicture(bmpout)
+            } catch (e: Throwable) {
+
+            }
+
+        }
+    }
+
     private fun displayTip(tip: String) {
         runOnUiThread {
+            if (tip.isEmpty()) {
+                return@runOnUiThread
+            }
             mDetectText.text = tip
             lastToast?.cancel()
-            val toast = Toast.makeText(this, tip, Toast.LENGTH_LONG)
+            val toast = ToastCompat.makeText(this, tip, Toast.LENGTH_LONG)
             val view = LayoutInflater.from(this).inflate(R.layout.layout_toast_message, null)
             view.findViewById<TextView>(R.id.tv_message).text = tip
             toast.view = view
@@ -332,7 +384,7 @@ class PreviewActivity : BaseActivity() {
                 return@runOnUiThread
             }
             lastToast?.cancel()
-            val toast = Toast.makeText(this, tip, Toast.LENGTH_LONG)
+            val toast = ToastCompat.makeText(this, tip, Toast.LENGTH_LONG)
             val view = LayoutInflater.from(this).inflate(R.layout.layout_toast_message, null)
             view.findViewById<TextView>(R.id.tv_message).text = tip
             view.findViewById<LinearLayout>(R.id.layout_toast)
@@ -344,6 +396,7 @@ class PreviewActivity : BaseActivity() {
         }
     }
 
+
     private fun checkResult(livenessModel: LivenessModel?) {
         // 当未检测到人脸UI显示
         runOnUiThread(Runnable {
@@ -351,72 +404,81 @@ class PreviewActivity : BaseActivity() {
                 mDetectText.text = "未检测到人脸"
                 return@Runnable
             }
-            if (mLiveType == 1) {
-                val user = livenessModel.user
-                if (user == null) {
-                    mDetectText.visibility = View.VISIBLE
-                    mDetectText.text = "搜索不到用户"
+            val user = livenessModel.user
+            if (user == null) {
+                mDetectText.visibility = View.VISIBLE
+                mDetectText.text = "搜索不到用户"
+                mFaceDetectImageView.setImageBitmap(null)
+                val faceInfo = livenessModel.faceInfo
+                if (faceInfo != null
+                    && faceInfo.faceID != lastFaceId
+                    && afterSeconds(2)
+                ) {
+                    lastFaceId = faceInfo.faceID
 
-                    val imageInstance = livenessModel.bdFaceImageInstance
-                    val bitmap = BitmapUtils.getInstaceBmp(imageInstance)
-                    FaceImageSynchronizeSavingUtils.saveNewImage(bitmap)
+                    if (!detectQrCode) {
 
-                    val faceInfo = livenessModel.faceInfo
-                    if (faceInfo != null && faceInfo.faceID != lastFaceId && afterSeconds(1)) {
-                        if (!detectQrCode) {
-                            FaceImageSynchronizeSavingUtils.getImage {
-                                recordTempVisitorFace(it)
-                            }
-                        }
-                        lastFaceId = faceInfo.faceID
-                        runBlocking {
-                            val deferred = async(mainContext) {
-                                return@async isAllPass()
-                            }
-                            if (deferred.await()) {
-                                letGo()
-                            }
-                        }
-                        if (!detectQrCode) {
-                            showKeyCodeIME()
-                        }
-
-                    }
-
-                } else {
-                    val bdFaceImageInstance = livenessModel.bdFaceImageInstance
-                    if (bdFaceImageInstance != null) {
-                        mFaceDetectImageView.setImageBitmap(
-                            BitmapUtils.getInstaceBmp(
-                                bdFaceImageInstance
+                        launch(threadContext) {
+                            val bitmap =
+                                BitmapUtils.getInstaceBmp(livenessModel.bdFaceImageInstance)
+                            recordTempVisitorFace(
+                                FaceImageSynchronizeSavingUtils.saveNewImage(bitmap)
                             )
-                        )
+                        }
                     }
-                    letGo()
-                    if (!livenessModel.isChecked) {
-                        displayTip("欢迎：${user.userName}")
-                        sendLogInfo(livenessModel)
+                    launch(threadContext) {
+                        if (isAllPass()) {
+                            letGo()
+                        }
                     }
-                    hideKeyboard(0)
+                    if (!detectQrCode) {
+                        showKeyCodeIME()
+                    }
+
+
                 }
+
+            } else {
+                imageHandler.removeCallbacksAndMessages(null)
+                val imageName = if (livenessModel.user.imageName.startsWith("http")) {
+                    livenessModel.user.imageName
+                } else {
+                    PropertiesUtils.getInstance().also {
+                        it.init()
+                        it.open()
+                    }.readString(
+                        "fileBaseUrl",
+                        "http://axj.ciih.net/"
+                    ) + livenessModel.user.imageName
+                }
+                Glide.with(mFaceDetectImageView)
+                    .load(imageName)
+                    .into(mFaceDetectImageView)
+                imageHandler.postDelayed({
+                    mFaceDetectImageView.setImageBitmap(null)
+                }, 4000)
+                letGo()
+                if (!livenessModel.isChecked) {
+                    displayTip("欢迎：${user.userName}")
+                    launch(threadContext) {
+                        sendEnterLog(livenessModel)
+                    }
+                    // sendLogInfo(livenessModel)
+
+                }
+                hideKeyboard(0)
             }
         })
     }
 
     @SuppressLint("CheckResult")
-    private fun letGo() = runBlocking(mainContext) {
+    private fun letGo() = launch {
         val now = System.currentTimeMillis()
-        val deferred = async(mainContext) {
-            val instance = PropertiesUtils.getInstance()
-            instance.init()
-            instance.open()
-            val relayCount = instance.readInt("relayCount", 2)
-            val relayDelay = instance.readInt("relayDelay", 2000)
-            return@async relayCount to relayDelay
-        }
-
-        val relayCount = deferred.await().first
-        val relayDelay = deferred.await().second
+        val instance = PropertiesUtils.getInstance()
+        instance.init()
+        instance.open()
+        val relayCount = instance.readInt("relayCount", 2)
+        val relayDelay = instance.readInt("relayDelay", 2000)
 
         if ((now - lastOpenTime) > (relayCount * relayDelay + 1000L)) {
             if (disposable?.isDisposed == false) {
@@ -439,37 +501,73 @@ class PreviewActivity : BaseActivity() {
 
     }
 
-    @SuppressLint("CheckResult")
-    private fun sendLogInfo(livenessModel: LivenessModel) {
-        val image = saveImageFile(null, livenessModel) ?: return
-        val api = RetrofitManager.getInstance().retrofit.create(Api::class.java)
-        api.uploadImage(
-            MultipartBody.Builder()
-                .addFormDataPart(
-                    "pic",
-                    image.name,
-                    RequestBody.create(MediaType.parse("multipart/form-data"), image)
-                )
-                .build()
+    private suspend fun sendEnterLog(livenessModel: LivenessModel) {
+        println("YJW:${Thread.currentThread()}")
+        val tempFile = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "image_captured_${System.currentTimeMillis()}.jpg"
         )
-            .flatMap<BaseResponse<Any>> { baseResponse ->
-                api.passByFaceId(
+        val image = saveImageFile(tempFile, livenessModel) ?: return
+        val apiKt = RetrofitManager.getInstance().retrofit.create(ApiKt::class.java)
+        try {
+            val uploadResp = apiKt.uploadFile(
+                MultipartBody.Builder()
+                    .addFormDataPart(
+                        "file",
+                        image.name,
+                        RequestBody.create(MediaType.parse("multipart/form-data"), image)
+                    )
+                    .build()
+            )
+            if (uploadResp.success()) {
+                val addLogResp = apiKt.passByFaceId(
                     livenessModel.user.userId,
                     deviceId,
-                    baseResponse.data.orginPicPath
+                    uploadResp.data.filePath
                 )
-            }.subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(
-                { baseResponse ->
-                    println(baseResponse.toString())
-                },
-                { throwable ->
-                    Log.d(TAG, "sendLogInfo() called with: throwable = [$throwable]")
-                    throwable.printStackTrace()
+                if (addLogResp.success()) {
+                    Log.e(TAG, "上传日志成功")
+                } else {
+                    Log.e(TAG, "上传日志失败:${addLogResp.text}")
                 }
+
+            } else {
+                Log.e(TAG, "上传图片失败")
+            }
+
+            val logFile = if (uploadResp.success()) {
+                null
+            } else {
+                val logFile = File(
+                    Environment.getExternalStorageDirectory(),
+                    "${System.currentTimeMillis()}_log.jpg"
+                )
+                tempFile.copyTo(logFile, overwrite = true)
+            }
+
+            FaceDBManager.getInstance(this).getLogDao().addLog(
+                PassageLog(
+                    uploadTime = Date(),
+                    isUploaded = uploadResp.success(),
+                    personId = livenessModel.user.userId,
+                    personName = livenessModel.user.userName,
+                    imageUrl = if (uploadResp.success()) uploadResp.data.toString() else logFile?.absolutePath
+                        ?: "NO_FILE_RECORD"
+                )
             )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "上传日志失败")
+            e.printStackTrace()
+        } finally {
+            if (tempFile.exists())
+                tempFile.delete()
+        }
+
+
+
     }
+
 
     private fun saveImageFile(file: File?, livenessModel: LivenessModel): File? {
         val bitmap = BitmapUtils.getInstaceBmp(livenessModel.bdFaceImageInstance)
@@ -555,7 +653,7 @@ class PreviewActivity : BaseActivity() {
             }
         }
 
-        btnConfirm.setOnClickListener { v ->
+        btnConfirm.setOnClickListener {
             val passCode = tvKeyCode.text.toString().trim { it <= ' ' }
             RetrofitManager.getInstance().retrofit.create(Api::class.java)
                 .passByKeyCode(deviceId, passCode)
@@ -581,7 +679,7 @@ class PreviewActivity : BaseActivity() {
     //上传通行码通行的信息
     @SuppressLint("CheckResult")
     private fun sendKeyPassInfo(passCode: String) {
-        FaceImageSynchronizeSavingUtils.getImage { copy ->
+        FaceImageSynchronizeSavingUtils.getImageCopy { copy ->
             val api = RetrofitManager.getInstance().retrofit.create(ApiKt::class.java)
 
             val uploadResponse = api.uploadImageSync(
@@ -619,7 +717,27 @@ class PreviewActivity : BaseActivity() {
             } finally {
                 detectQrCode = false
             }
+            val logFile = if (uploadResponse.success()) {
+                ToastUtils.toast(this, "上传日志成功")
+                null
+            } else {
+                val logFile = File(
+                    Environment.getExternalStorageDirectory(),
+                    "${System.currentTimeMillis()}_log.jpg"
+                )
+                copy.copyTo(logFile, overwrite = true)
+            }
 
+            FaceDBManager.getInstance(this).getLogDao().addLog(
+                PassageLog(
+                    uploadTime = Date(),
+                    isUploaded = uploadResponse.success(),
+                    personId = "UNKNOWN",
+                    personName = "VISITOR",
+                    imageUrl = if (uploadResponse.success()) uploadResponse.data.toString() else logFile?.absolutePath
+                        ?: "NO_FILE_RECORD"
+                )
+            )
         }
 
     }
@@ -628,8 +746,9 @@ class PreviewActivity : BaseActivity() {
     @SuppressLint("CheckResult")
     private suspend fun recordTempVisitorFace(image: File) {
         println("YJW:record face")
+        println("RESPONSE:${Thread.currentThread()}")
         val api = RetrofitManager.getInstance().retrofit.create(ApiKt::class.java)
-        try {
+        val upload = try {
             val response = api.addTempVisitorRecord(
                 MultipartBody.Builder()
                     .addFormDataPart(
@@ -640,12 +759,82 @@ class PreviewActivity : BaseActivity() {
                     .addFormDataPart("gateId", deviceId)
                     .build()
             )
-            println(response.toString())
-        } catch (e: Exception) {
-            showErrorTip(e.message ?: "")
-        } finally {
+            response
 
+        } catch (e: Exception) {
+            e.printStackTrace()
+            showErrorTip(e.message ?: "")
+            BaseResponse.fail(e)
         }
+        try {
+
+            //抓图
+            val bitmap = withContext(threadContext) {
+                INetSDKHelper.snapPicture {
+                    val capturedFile = File(
+                        Environment.getExternalStorageDirectory(),
+                        "NVR_Captured_image_${System.currentTimeMillis()}.jpeg"
+                    )
+                    val fos = FileOutputStream(capturedFile)
+                    it.compress(Bitmap.CompressFormat.JPEG, 100, fos)
+                    fos.flush()
+                    fos.close()
+                }
+            }
+            runOnUiThread {
+                mFaceTempImageView.setImageBitmap(bitmap)
+            }
+
+            //下载录像
+
+            //2分钟
+            //val calendar = Calendar.getInstance()
+            //calendar.time = Date()
+            //calendar.set(Calendar.SECOND, 0)
+            //calendar.set(Calendar.MILLISECOND, 0)
+            //calendar.set(Calendar.MINUTE, calendar.get(Calendar.MINUTE) - 1)
+            //val start = calendar.time
+            //calendar.set(Calendar.MINUTE, calendar.get(Calendar.MINUTE) + 2)
+            //val end = calendar.time
+            //
+            //INetSDKHelper.postDownloadTask(startDate = start,endDate = end)
+
+            //前后十秒
+            INetSDKHelper.postDownloadTask(startDate = Date().apply {
+                this.time = this.time - 10_000
+            }, endDate = Date().apply {
+                this.time = this.time + 10_000
+            })
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        try {
+            val logFile = if (upload.success()) {
+                ToastUtils.toast(this, "上传日志成功")
+                null
+            } else {
+                val logFile = File(
+                    Environment.getExternalStorageDirectory(),
+                    "${System.currentTimeMillis()}_log.jpg"
+                )
+                image.copyTo(logFile, overwrite = true)
+            }
+            FaceDBManager.getInstance(this).getLogDao().addLog(
+                PassageLog(
+                    uploadTime = Date(),
+                    isUploaded = upload.success(),
+                    personId = "UNKNOWN",
+                    personName = "VISITOR",
+                    imageUrl = if (upload.success()) upload.data.toString() else logFile?.absolutePath
+                        ?: "NO_FILE_RECORD"
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
 
     }
 
@@ -707,7 +896,7 @@ class PreviewActivity : BaseActivity() {
             //绘制二维码框框
             if (detectQrCode) {
                 mPaintBorder.style = Paint.Style.FILL
-                mPaintBorder.color = Color.argb(0x66,0x00,0x00,0x00)
+                mPaintBorder.color = Color.argb(0x66, 0x00, 0x00, 0x00)
                 canvas.drawRect(0f, 0f, width.toFloat(), mFramingRect.top, mPaintBorder)
                 canvas.drawRect(
                     0f,

@@ -8,6 +8,8 @@ import com.apm.anxinju.main.listener.SdkInitListener
 import com.apm.anxinju.main.manager.FaceSDKManager
 import com.apm.anxinju.main.utils.ConfigUtils
 import com.apm.anxinju.main.utils.ToastUtils
+import com.apm.dahuaipc.INetSDKHelper
+import me.drakeet.support.toast.ToastCompat
 
 class MainActivity : BaseActivity() {
 
@@ -21,12 +23,14 @@ class MainActivity : BaseActivity() {
         val isConfigExit = ConfigUtils.isConfigExit()
         val isInitConfig = ConfigUtils.initConfig()
         if (isInitConfig && isConfigExit) {
-            Toast.makeText(this@MainActivity, "初始配置加载成功", Toast.LENGTH_SHORT).show()
+            ToastCompat.makeText(this@MainActivity, "初始配置加载成功", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this@MainActivity, "初始配置失败,将重置文件内容为默认配置", Toast.LENGTH_SHORT).show()
+            ToastCompat.makeText(this@MainActivity, "初始配置失败,将重置文件内容为默认配置", Toast.LENGTH_SHORT)
+                .show()
             ConfigUtils.modityJson()
         }
-
+        //INetSDKManager.initSDKBySNSerial(this,"5G02B52PAZD3C2B","18628145340")
+        INetSDKHelper.loginAsync(address = "192.168.10.109",port = 37777,password = "admin123",username = "admin")
         //激活引擎
         initLicense()
     }
@@ -40,7 +44,9 @@ class MainActivity : BaseActivity() {
                 }
 
                 override fun initLicenseSuccess() {
-                    goPreview()
+                    runOnUiThread {
+                        goPreview()
+                    }
                 }
 
                 override fun initLicenseFail(errorCode: Int, msg: String) {
@@ -55,13 +61,12 @@ class MainActivity : BaseActivity() {
 
                 }
             })
-        }else{
+        } else {
             goPreview()
         }
     }
 
     private fun goPreview() {
-        finish()
         startActivity(Intent(this, PreviewActivity::class.java))
     }
 }

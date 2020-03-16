@@ -1,2 +1,2 @@
-include ':app' , ':facelibrary' ,':data', ':rs485reader',':serial',':tpsutils',':qrcode'
+include ':app', ':dahuaipc', ':nfc' , ':facelibrary' ,':data',':serial',':tpsutils',':qrcode', ':rs485reader'
 rootProject.name='Anxinju_BaiduFaceSdk3.0'

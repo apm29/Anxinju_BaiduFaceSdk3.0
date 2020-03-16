@@ -1,5 +1,7 @@
 package com.apm.data.model;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,15 +32,28 @@ public class BaseResponse<T> {
         this.data = data;
     }
 
-    public static <T> BaseResponse<List<T>> emptyList(){
+    public static <T> BaseResponse<List<T>> emptyList() {
         return new BaseResponse<List<T>>(
-                "1","请求失败","",new ArrayList<T>()
+                "1", "请求失败", "", new ArrayList<T>()
         );
     }
 
-    public static <T> BaseResponse<T> error(){
+    public static <T> BaseResponse<T> error() {
         return new BaseResponse<>(
                 "0", "请求失败", "", null
+        );
+    }
+
+    public static <T> BaseResponse<T> success(T data) {
+        return new BaseResponse<>(
+                "0", "成功", "", data
+        );
+    }
+
+    @NotNull
+    public static BaseResponse<Object> fail(@NotNull Exception e) {
+        return new BaseResponse<>(
+                "0", "请求失败:" + e.getMessage(), "", null
         );
     }
 }

@@ -30,7 +30,7 @@ class ExampleUnitTest {
         //        .create(ApiKt::class.java)
         //        .uploadImageSync(
         //                MultipartBody.Builder()
-        //                        .addFormDataPart("pic", file.name, RequestBody.create(
+        //                        .addFormDataPart("pic", file.uid, RequestBody.create(
         //                                MediaType.parse("multipart/form-data"), file
         //                        ))
         //                        .build()

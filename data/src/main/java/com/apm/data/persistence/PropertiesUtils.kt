@@ -94,6 +94,14 @@ class PropertiesUtils {
         return Integer.parseInt(mProp.getProperty(name, "" + defaultValue))
     }
 
+    fun writeLong(name: String, value: Long) {
+        mProp.setProperty(name, "" + value)
+    }
+
+    fun readLong(name: String, defaultValue: Long): Long {
+        return java.lang.Long.parseLong(mProp.getProperty(name, "" + defaultValue))
+    }
+
     fun writeBoolean(name: String, value: Boolean) {
         mProp.setProperty(name, "" + value)
     }

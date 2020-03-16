@@ -5,7 +5,7 @@ import java.lang.StringBuilder
 
 object ByteCRC16 {
 
-    private fun getCRC16(bytes: ByteArray, INIT_CRC: Int = 0xFFFF, POLYNOMIAL: Int = 0x8408): String {
+    fun getCRC16(bytes: ByteArray, INIT_CRC: Int = 0xFFFF, POLYNOMIAL: Int = 0x8408): String {
 
         val uBytes = UByteArray(bytes.size) { i ->
             return@UByteArray bytes[i].toUByte()

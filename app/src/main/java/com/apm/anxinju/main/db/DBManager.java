@@ -6,12 +6,14 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.os.Environment;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.apm.anxinju.main.model.User;
 import com.apm.anxinju.main.model.Group;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,7 +24,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * 数据库管理类
  */
 public class DBManager {
-    /** The constant TAG */
+    /**
+     * The constant TAG
+     */
     private static final String TAG = "DBManager";
 
     private AtomicInteger mOpenCounter = new AtomicInteger();
@@ -35,6 +39,7 @@ public class DBManager {
 
     /**
      * 单例模式，初始化DBManager
+     *
      * @return DBManager实例
      */
     public static synchronized DBManager getInstance() {
@@ -46,6 +51,7 @@ public class DBManager {
 
     /**
      * 数据库初始化
+     *
      * @param context 当前上下文
      */
     public void init(Context context) {
@@ -56,6 +62,12 @@ public class DBManager {
         if (mDBHelper == null) {
             mDBHelper = new DBHelper(context.getApplicationContext());
         }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                importDbFromV2();
+            }
+        }).start();
     }
 
     /**
@@ -96,6 +108,7 @@ public class DBManager {
     }
 
     // ---------------------------------------用户组相关 start--------------------------------------
+
     /**
      * 添加用户组
      */
@@ -107,7 +120,7 @@ public class DBManager {
 
         SQLiteDatabase db = mDBHelper.getReadableDatabase();
         String where = "group_id = ? ";
-        String[] whereValue = { group.getGroupId() };
+        String[] whereValue = {group.getGroupId()};
         // 查询该groupId是否在数据库中，如果在，则不添加
         cursor = db.query(DBHelper.TABLE_USER_GROUP, null, where, whereValue,
                 null, null, null);
@@ -152,7 +165,7 @@ public class DBManager {
                 return null;
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
-            String limit =  start + " , " + offset;
+            String limit = start + " , " + offset;
             cursor = db.query(DBHelper.TABLE_USER_GROUP, null, null, null, null, null, null, limit);
             while (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 int dbId = cursor.getInt(cursor.getColumnIndex("_id"));
@@ -186,7 +199,7 @@ public class DBManager {
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
             String where = "group_id = ? ";
-            String[] whereValue = { groupId };
+            String[] whereValue = {groupId};
             cursor = db.query(DBHelper.TABLE_USER_GROUP, null, where, whereValue, null, null, null);
             while (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 int dbId = cursor.getInt(cursor.getColumnIndex("_id"));
@@ -219,7 +232,7 @@ public class DBManager {
 
             if (!TextUtils.isEmpty(groupId)) {
                 String where = "group_id = ?";
-                String[] whereValue = { groupId };
+                String[] whereValue = {groupId};
 
                 if (mDatabase.delete(DBHelper.TABLE_USER, where, whereValue) < 0) {
                     return false;
@@ -292,7 +305,7 @@ public class DBManager {
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
             String where = "user_id = ? and group_id = ? ";
-            String[] whereValue = { userId, groupId };
+            String[] whereValue = {userId, groupId};
             cursor = db.query(DBHelper.TABLE_USER, null, where, whereValue, null, null, null);
             if (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 int dbId = cursor.getInt(cursor.getColumnIndex("_id"));
@@ -327,7 +340,7 @@ public class DBManager {
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
             String where = "group_id = ? ";
-            String[] whereValue = { groupId };
+            String[] whereValue = {groupId};
             cursor = db.query(DBHelper.TABLE_USER, null, where, whereValue, null, null, null);
             while (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 int dbId = cursor.getInt(cursor.getColumnIndex("_id"));
@@ -371,7 +384,7 @@ public class DBManager {
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
             String where = "user_name = ? and group_id = ? ";
-            String[] whereValue = { userName, groupId };
+            String[] whereValue = {userName, groupId};
             cursor = db.query(DBHelper.TABLE_USER, null, where, whereValue, null, null, null);
             if (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 int dbId = cursor.getInt(cursor.getColumnIndex("_id"));
@@ -414,7 +427,7 @@ public class DBManager {
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
             String where = "_id = ? ";
-            String[] whereValue = { String.valueOf(_id) };
+            String[] whereValue = {String.valueOf(_id)};
             cursor = db.query(DBHelper.TABLE_USER, null, where, whereValue, null, null, null);
             if (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 String groupId = cursor.getString(cursor.getColumnIndex("group_id"));
@@ -455,7 +468,7 @@ public class DBManager {
             }
             SQLiteDatabase db = mDBHelper.getReadableDatabase();
             String where = "user_id = ? ";
-            String[] whereValue = { String.valueOf(queryUserId) };
+            String[] whereValue = {String.valueOf(queryUserId)};
             cursor = db.query(DBHelper.TABLE_USER, null, where, whereValue, null, null, null);
             if (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
                 int _id = cursor.getInt(cursor.getColumnIndex("_id"));
@@ -488,6 +501,52 @@ public class DBManager {
         return users;
     }
 
+
+    private void importDbFromV2() {
+        File oldDb = new File(Environment.getExternalStorageDirectory(), "bdface.db");
+        if(oldDb.exists()){
+            SQLiteDatabase database = SQLiteDatabase.openOrCreateDatabase(oldDb, null);
+            Cursor cursor = null;
+            try {
+                database.beginTransaction();
+                cursor = database.query("feature", null, null, null, null, null, null, null);
+                while (cursor != null && cursor.getCount() > 0 && cursor.moveToNext()) {
+                    int _id = cursor.getInt(cursor.getColumnIndex("_id"));
+                    String groupId = cursor.getString(cursor.getColumnIndex("group_id"));
+                    String userId = cursor.getString(cursor.getColumnIndex("user_id"));
+                    String userName = cursor.getString(cursor.getColumnIndex("user_name"));
+                    String cropImage = cursor.getString(cursor.getColumnIndex("crop_name"));
+                    String faceToken = cursor.getString(cursor.getColumnIndex("face_token"));
+                    byte[] feature = cursor.getBlob(cursor.getColumnIndex("feature"));
+                    String imageName = cursor.getString(cursor.getColumnIndex("image_name"));
+                    long updateTime = cursor.getLong(cursor.getColumnIndex("update_time"));
+                    long createTime = cursor.getLong(cursor.getColumnIndex("ctime"));
+
+                    User user = new User();
+                    user.setId(_id);
+                    user.setUserId(userId);
+                    user.setGroupId(groupId);
+                    user.setUserName(userName);
+                    user.setCtime(createTime);
+                    user.setUpdateTime(updateTime);
+                    user.setUserInfo(cropImage);
+                    user.setFeature(feature);
+                    user.setImageName(imageName);
+                    user.setFaceToken(faceToken);
+
+                    addUser(user);
+                }
+            }catch (Exception e){
+                e.printStackTrace();
+            }finally {
+                database.endTransaction();
+                closeCursor(cursor);
+                oldDb.delete();
+            }
+        }
+    }
+
+
     /**
      * 更新用户
      */
@@ -504,7 +563,7 @@ public class DBManager {
             if (user != null) {
                 mDatabase.beginTransaction();
                 String where = "user_id = ? and group_id = ?";
-                String[] whereValue = { user.getUserId(), user.getGroupId() };
+                String[] whereValue = {user.getUserId(), user.getGroupId()};
                 ContentValues cv = new ContentValues();
 
                 cv.put("user_id", user.getUserId());
@@ -539,7 +598,7 @@ public class DBManager {
             beginTransaction(mDatabase);
 
             String where = "user_name = ? and group_id = ?";
-            String[] whereValue = { userName, groupId };
+            String[] whereValue = {userName, groupId};
             ContentValues cv = new ContentValues();
 
             cv.put("user_name", userName);
@@ -561,7 +620,7 @@ public class DBManager {
     /**
      * 更新用户
      */
-    public boolean updateUserWithUserId(String groupId, String userId, String imageName, byte[] feature) {
+    public boolean updateUserWithUserId(String groupId, String userId, String imageName,String userName, byte[] feature) {
 
         if (mDBHelper == null) {
             return false;
@@ -572,11 +631,11 @@ public class DBManager {
             beginTransaction(mDatabase);
 
             String where = "user_id = ? and group_id = ?";
-            String[] whereValue = { userId, groupId };
+            String[] whereValue = {userId, groupId};
             ContentValues cv = new ContentValues();
 
             cv.put("user_id", userId);
-            cv.put("user_name", userId);
+            cv.put("user_name", userName);
             cv.put("group_id", groupId);
             cv.put("image_name", imageName);
             cv.put("update_time", System.currentTimeMillis());
@@ -603,7 +662,7 @@ public class DBManager {
 
             if (!TextUtils.isEmpty(userId)) {
                 String where = "user_id = ? and group_id = ?";
-                String[] whereValue = { userId, groupId };
+                String[] whereValue = {userId, groupId};
 
                 if (mDatabase.delete(DBHelper.TABLE_USER, where, whereValue) < 0) {
                     return false;

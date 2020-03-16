@@ -13,6 +13,6 @@
     <color name="buttonBg">#016838</color>
     <color name="red">#FF0033</color>
     <color name="transparent">#00000000</color>
-    <!--<color name="buttonBg">#FF009688</color>-->
+    <!--<color uid="buttonBg">#FF009688</color>-->
 
 </resources>

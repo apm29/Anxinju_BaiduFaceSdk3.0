@@ -10,7 +10,7 @@ public class FaceModel implements Parcelable {
     public String noEnterFlag;
     public String personId;
     public String passcode;
-    public  String name;
+    public  String uid;
     public String delFlag;
 
     public FaceModel() {
@@ -23,7 +23,7 @@ public class FaceModel implements Parcelable {
         noEnterFlag = in.readString();
         personId = in.readString();
         passcode = in.readString();
-        name = in.readString();
+        uid = in.readString();
         delFlag = in.readString();
     }
 
@@ -35,7 +35,7 @@ public class FaceModel implements Parcelable {
         dest.writeString(noEnterFlag);
         dest.writeString(personId);
         dest.writeString(passcode);
-        dest.writeString(name);
+        dest.writeString(uid);
         dest.writeString(delFlag);
     }
 
@@ -65,8 +65,20 @@ public class FaceModel implements Parcelable {
                 ", noEnterFlag='" + noEnterFlag + '\'' +
                 ", personId='" + personId + '\'' +
                 ", passcode='" + passcode + '\'' +
-                ", name='" + name + '\'' +
+                ", uid='" + uid + '\'' +
                 ", delFlag='" + delFlag + '\'' +
                 '}';
+    }
+
+    public boolean delete(){
+        return delFlag!=null&&delFlag.equals("1");
+    }
+
+    public String absolutePicUrl(String prefix){
+        if(personPic.startsWith("http")){
+            return  personPic;
+        }else {
+            return  prefix+personPic;
+        }
     }
 }
