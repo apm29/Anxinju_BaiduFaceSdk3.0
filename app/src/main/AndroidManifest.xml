@@ -44,13 +44,12 @@
         <activity android:name="com.apm.anxinju.main.activity.QRCodeActivity" android:launchMode="singleInstance"
             android:hardwareAccelerated="true"
             />
-        <activity android:name="com.apm.anxinju.main.activity.MainActivity"
-            >
+        <activity android:name="com.apm.anxinju.main.activity.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <action android:name="android.intent.action.VIEW" />
-
+                <action android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <activity android:name="com.apm.anxinju.main.activity.FaceAuthActivity" />
@@ -75,7 +74,6 @@
         <receiver android:name="com.apm.anxinju.main.StartupReceiver" >
             <intent-filter android:priority="99">
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </receiver>
     </application>

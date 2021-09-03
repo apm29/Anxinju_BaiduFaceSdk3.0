@@ -414,7 +414,6 @@ class PreviewActivity : BaseActivity(), CoroutineScope {
                     && faceInfo.faceID != lastFaceId
                     && afterSeconds(2)
                 ) {
-                    lastFaceId = faceInfo.faceID
 
                     if (!detectQrCode) {
 
@@ -432,7 +431,7 @@ class PreviewActivity : BaseActivity(), CoroutineScope {
                         }
                     }
                     if (!detectQrCode) {
-                        showKeyCodeIME()
+                        //showKeyCodeIME()
                     }
 
 
@@ -763,7 +762,7 @@ class PreviewActivity : BaseActivity(), CoroutineScope {
 
         } catch (e: Exception) {
             e.printStackTrace()
-            showErrorTip(e.message ?: "")
+            showErrorTip("图片上传失败")
             BaseResponse.fail(e)
         }
         try {
